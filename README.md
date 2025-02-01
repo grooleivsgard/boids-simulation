@@ -1,13 +1,31 @@
-# boids-simulation
+# Boids Flocking Simulation
 
-This repository contains Python code to simulate flocking behavior using the Boids algorithm. It includes features for cohesion, alignment, and separation, allowing you to explore how boids interact in a flocking environment.
+This repository contains a Python implementation of a boids flocking simulation using Pygame. The simulation demonstrates emergent flocking behavior (alignment, separation, and cohesion) as described in Craig Reynolds' classic Boids algorithm.
 
-## Features
-- Cohesion: Boids move towards the average position of their local flockmates.
-- Alignment: Boids align their direction with the average direction of their local flockmates.
-- Separation: Boids avoid crowding their local flockmates.
+## Overview
+
+The simulation initializes 200 boids that move around the screen while avoiding collisions, aligning with nearby boids, and staying together as a flock. The boids' behavior is governed by a combination of wandering, separation, alignment, and cohesion forces.
+
+When you run the simulation, it will also capture each frame and save a GIF (`boids_simulation.gif`) of the simulation when you close the window.
+
+## Demo
+
+Check out the simulation in action:
+
+![Boids Simulation](boids_simulation.gif)
+
+*Click on the image for a larger view, if needed.*
 
 ## Requirements
+
 - Python 3.x
-- Pygame
+- [Pygame](https://www.pygame.org/)
+- [Imageio](https://imageio.readthedocs.io/)
+- [NumPy](https://numpy.org/)
+
+Install the required packages with:
+
+```bash
+pip install pygame imageio numpy
+
 
