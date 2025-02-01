@@ -1,7 +1,8 @@
 import math
 from random import randint, uniform
-
 import pygame as pg
+import imageio  # New import for saving GIFs
+import numpy as np
 
 # Color constants
 BLACK = (0, 0, 0)
@@ -29,7 +30,6 @@ ALIGNMENT_RADIUS = 50
 COHESION = 1
 COHESION_RADIUS = 80
 
-
 class Simulation:
 
     def __init__(self):
@@ -44,64 +44,69 @@ class Simulation:
         for i in range(NUM_BOIDS):
             self.boids.append(Boid(self, (randint(0, SCREEN_WIDTH), randint(0, SCREEN_HEIGHT))))
 
+        self.frames = []  # List to store captured frames
+
     def events(self):
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 self.running = False
 
     def draw(self):
-        # Empty the last screen
+        # Clear the screen
         self.screen.fill(BLACK)
 
         # Draw all boids
         for boid in self.boids:
             boid.draw(self.screen)
 
-        # Update the screen
+        # Update the display
         pg.display.update()
+
+        # Capture the current frame
+        frame = pg.surfarray.array3d(self.screen)
+        # Transpose the frame array from (width, height, channels) to (height, width, channels)
+        frame = np.transpose(frame, (1, 0, 2))
+        self.frames.append(frame)
 
     def update(self):
         """
-        Method for going one step in the simulation
+        Advances the simulation by one step.
         """
         for boid in self.boids:
             boid.update()
 
     def run(self):
-        """
-        Runs the simulation
-        """
         self.running = True
         while self.running:
             self.clock.tick(self.fps)
             self.events()
             self.update()
             self.draw()
+        # Simulation has ended; print message for debugging.
+        print("Simulation ended, saving GIF...")
+        gif_filename = "boids_simulation.gif"
+        imageio.mimsave(gif_filename, self.frames, fps=self.fps)
+        print(f"Simulation GIF saved as {gif_filename}")
 
+
+# (Rest of your code remains the same)
 
 class PhysicsObjet:
-
     def __init__(self, simulation, position):
         self.simulation = simulation
         self.acc = pg.math.Vector2(0, 0)
         self.vel = pg.math.Vector2(0, 0)
         self.pos = pg.math.Vector2(position)
-
         self.speed = 1
-
         self.friction = 0.9
 
     def update(self):
         self.vel += self.acc
         self.pos += self.vel * self.speed
+        self.acc *= 0  # Reset acceleration
+        self.vel *= self.friction  # Apply friction
 
-        # Reset acceleration
-        self.acc *= 0
-
-        # Simplistic surface friction
-        self.vel *= self.friction
-
-        # wrap around the edges of the screen
+        # Wrap around screen edges
         if self.pos.x > self.simulation.screen_rect.w:
             self.pos.x -= self.simulation.screen_rect.w
         elif self.pos.x < 0:
@@ -112,213 +117,125 @@ class PhysicsObjet:
         elif self.pos.y < 0:
             self.pos.y += self.simulation.screen_rect.h
 
-
 class Boid(PhysicsObjet):
-
     def __init__(self, simulation, position):
         super().__init__(simulation, position)
-        self.speed = SPEED  # Max speed
-        self.vel = pg.math.Vector2(randint(-2, 2), randint(-2, 2))  # Random initial velocity
-
-        self.max_force = MAX_FORCE  # force cap, limits the size of the different forces
-        self.friction = BOID_FRICTION  # Friction coefficient for the simplistic physics
-
-        # Parameters for wandering behaviour
+        self.speed = SPEED
+        self.vel = pg.math.Vector2(randint(-2, 2), randint(-2, 2))
+        self.max_force = MAX_FORCE
+        self.friction = BOID_FRICTION
         self.target = pg.math.Vector2(0, 0)
         self.future_loc = pg.math.Vector2(0, 0)
         self.theta = uniform(-math.pi, math.pi)
 
     def update(self):
-        """
-        Updates the acceleration of the boid by adding together the different forces that acts on it
-        """
-        self.acc += self.wander()  # Wandering force
-        self.acc += self.separation() * SEPARATION  # separation force scaled with a controll parameter
-        self.acc += self.alignment() * ALIGNMENT  # alignement force scaled with a controll parameter
-        self.acc += self.cohesion() * COHESION  # cohesion force scaled with a controll parameter
-
-        # move by calling super
+        self.acc += self.wander()
+        self.acc += self.separation() * SEPARATION
+        self.acc += self.alignment() * ALIGNMENT
+        self.acc += self.cohesion() * COHESION
         super().update()
 
     def separation(self):
-        """
-        Calculate the separation force vector
-        Separation: steer to avoid crowding local flockmates
-        :return force vector
-        """
         force_vector = pg.math.Vector2(0, 0)
-
         neighbors = 0
-        # Find neighboring boids
         for boid in self.simulation.boids:
-            if boid == self:  # Skip self in neighbor calculation
+            if boid == self:
                 continue
             distance = self.pos.distance_to(boid.pos)
             if 0 < distance < SEPARATION_RADIUS:
-                # Boid is neighbor
                 neighbors += 1
-                # Calculate inverse vector to steer away
                 steer_boid = self.pos - boid.pos
-                #steer_boid.normalize_ip()
-                # steer_boid /= distance  # Steer further away from closer neighbors
                 scaled_distance = remap(distance, 0, SEPARATION_RADIUS, 1, 0)
                 steer_boid *= scaled_distance
                 force_vector += steer_boid
-
-        # Calculate avg seperation forces of neighbors
         if neighbors > 0:
             force_vector /= neighbors
-            # Cap force vector to maximum allowable value
             if force_vector.length() > 0:
                 limit(force_vector, MAX_FORCE)
-
         return force_vector
 
     def alignment(self):
-        """
-        Calculate the alignment force vector
-        Alignment: steer towards the average heading of local flockmates
-        :return force vector
-        """
         force_vector = pg.math.Vector2(0, 0)
-
-
         neighbors = 0
-        # Find neighboring boids
         for boid in self.simulation.boids:
-            if boid == self:  # Skip self in neighbor calculation
+            if boid == self:
                 continue
             distance = self.pos.distance_to(boid.pos)
             if 0 < distance < ALIGNMENT_RADIUS:
                 neighbors += 1
-                # Add neighbors velocity
                 force_vector += boid.vel
-
-        # Calculate avg velocity of neighbors
         if neighbors > 0:
             force_vector /= neighbors
-            # Calculate velocity for boid
             force_vector = force_vector - self.vel
-            # Cap steering vector to maximum allowable value
             if force_vector.length() > 0:
                 limit(force_vector, MAX_FORCE)
-
         return force_vector
 
     def cohesion(self):
-        """
-        Calculate the cohesion force vector
-        Cohesion: steer to move toward the average position of local flockmates
-        """
-        force_vector = pg.math.Vector2(0, 0)  # Initializes two-dimensional vector to zero
-
+        force_vector = pg.math.Vector2(0, 0)
         neighbors = 0
-        # Find neighboring boids
         for boid in self.simulation.boids:
-            if boid == self:  # Skip self in neighbor calculation
+            if boid == self:
                 continue
             distance = self.pos.distance_to(boid.pos)
             if 0 < distance < COHESION_RADIUS:
                 neighbors += 1
-                # Add neighbors position
                 force_vector += boid.pos
-                #force_vector.normalize_ip()
-
-        # Calculate avg position of neighbors
         if neighbors > 0:
             force_vector /= neighbors
             force_vector -= self.pos
-            # Cap steering vector to maximum allowable value
             if force_vector.length() > 0:
                 limit(force_vector, MAX_FORCE)
-
         return force_vector
 
     def move_towards_target(self, target):
-        """
-        Calculate force vector for moving the boid to the target
-        """
-        # vector to the target
         desired = target - self.pos
-
         distance = desired.length()
         desired = desired.normalize()
-
-        # Radius
         radius = 100
-
         if distance < radius:
-            # if the distance is less than the radius,
             m = remap(distance, 0, radius, 0, self.speed)
-
-            # scale the desired vector up to continue movement in that direction
             desired *= m
         else:
             desired *= self.speed
-
         force_vector = desired - self.vel
         limit(force_vector, self.max_force)
         return force_vector
 
     def wander(self):
-        """
-        Calcualte a random target to move towards to get natural random flight
-        """
         if self.vel.length_squared() != 0:
-            # Calculate where you will be in the future
             self.future_loc = self.vel.normalize() * 80
-
-            # Calculate a random angle addition
             self.theta += uniform(-math.pi, math.pi) / 10
-
-            # set the target to your position + your future position + a distance in the direction of the random angle
             self.target = self.pos + self.future_loc + pg.math.Vector2(WANDER_RADIUS * math.cos(self.theta),
                                                                        WANDER_RADIUS * math.sin(self.theta))
         return self.move_towards_target(self.target)
 
     def draw(self, screen):
-        """Draw boid to screen"""
-
-        # Calculate the angle to the velocity vector to get the forward direction
         angle = math.atan2(self.vel.y, self.vel.x)
-        other_points_angle = 0.75 * math.pi  # angle +- value to get the other two points in the triangle
-
-        # Get the points of the triangle
+        other_points_angle = 0.75 * math.pi
         x0 = self.pos.x + BOID_SIZE * math.cos(angle)
         y0 = self.pos.y + BOID_SIZE * math.sin(angle)
-
         x1 = self.pos.x + BOID_SIZE * math.cos(angle + other_points_angle)
         y1 = self.pos.y + BOID_SIZE * math.sin(angle + other_points_angle)
-
         x2 = self.pos.x + BOID_SIZE * math.cos(angle - other_points_angle)
         y2 = self.pos.y + BOID_SIZE * math.sin(angle - other_points_angle)
-
-        # Draw
         pg.draw.polygon(screen, WHITE, [(x1, y1), (x2, y2), (x0, y0)])
 
-
-# Helper functions
 def remap(n, start1, stop1, start2, stop2):
-    """Remap a value in one range to a different range"""
     new_value = (n - start1) / (stop1 - start1) * (stop2 - start2) + start2
     if start2 < stop2:
         return constrain(new_value, start2, stop2)
     else:
         return constrain(new_value, stop2, start2)
 
-
 def constrain(n, low, high):
-    """Constrain a value to a range"""
     return max(min(n, high), low)
 
-
 def limit(vector, length):
-    """Cap a value"""
     if vector.length_squared() <= length * length:
         return
     else:
         vector.scale_to_length(length)
-
 
 if __name__ == '__main__':
     sim = Simulation()
